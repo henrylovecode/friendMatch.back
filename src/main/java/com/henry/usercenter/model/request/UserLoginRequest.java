@@ -1,4 +1,4 @@
-package com.henry.usercenter.model.domain.request;
+package com.henry.usercenter.model.request;
 
 import lombok.Data;
 

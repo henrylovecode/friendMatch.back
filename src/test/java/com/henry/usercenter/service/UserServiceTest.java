@@ -1,14 +1,14 @@
 package com.henry.usercenter.service;
-import java.util.Date;
+import java.util.Arrays;
+import java.util.List;
 
 import com.henry.usercenter.model.domain.User;
-import org.junit.Assume;
+import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import javax.annotation.Resource;
-import javax.jws.soap.SOAPBinding;
 
 
 /**
@@ -79,5 +79,11 @@ public class UserServiceTest {
         /*userAccount="yupi";
         result = userService.uesrRegister(userAccount,userPassword,checkPassword,planetCode);
         Assertions.assertTrue(result > 0) ;*/
+    }
+    @Test
+    public  void searchUsersByTags(){
+        List<String> tagName = Arrays.asList("java","python");
+        List<User> userList = userService.searchUsersByTags(tagName);
+        Assert.assertNotNull(userList);
     }
 }

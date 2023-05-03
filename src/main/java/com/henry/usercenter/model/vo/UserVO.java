@@ -1,23 +1,21 @@
-package com.henry.usercenter.model.domain;
+package com.henry.usercenter.model.vo;
 
-import com.baomidou.mybatisplus.annotation.*;
-
-import java.io.Serializable;
-import java.util.Date;
 import lombok.Data;
 
+import java.util.Date;
+
 /**
- * 用户
- * @TableName user
+ * FileName:     UserVO
+ * CreateBy:     IntelliJ IDEA
+ * Author:       wei
+ * Date:         2023-04-22
+ * Description :
  */
-@TableName(value ="user")
 @Data
-public class User implements Serializable {
+public class UserVO {
     /**
      * id
-
      */
-    @TableId(type = IdType.AUTO)
     private long id;
 
     /**
@@ -26,7 +24,7 @@ public class User implements Serializable {
     private String username;
 
     /**
-     * 账户
+     * 账号
      */
     private String userAccount;
 
@@ -41,23 +39,9 @@ public class User implements Serializable {
     private Integer gender;
 
     /**
-     * 密码
-     */
-    private String userPassword;
-
-    /**
      * 电话
      */
     private String phone;
-
-    /**
-     * 标签列表tags
-     */
-    private String tags;
-    /**
-     * 状态 0 - 正常
-     */
-    private Integer userStatus;
 
     /**
      * 邮箱
@@ -65,15 +49,19 @@ public class User implements Serializable {
     private String email;
 
     /**
+     * 标签列表 json
+     */
+    private String tags;
+
+    /**
+     * 状态 0 - 正常
+     */
+    private Integer userStatus;
+
+    /**
      * 创建时间
      */
     private Date createTime;
-
-    /**
-     * 是否删除
-     */
-    @TableLogic
-    private Integer isDelete;
 
     /**
      *
@@ -84,13 +72,12 @@ public class User implements Serializable {
      * 用户角色 0 - 普通用户 1 - 管理员
      */
     private Integer userRole;
+
     /**
      * 星球编号
      */
     private String planetCode;
 
-
-    @TableField(exist = false)
     private static final long serialVersionUID = 1L;
 
 }

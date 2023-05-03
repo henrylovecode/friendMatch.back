@@ -1,24 +1,29 @@
 package com.henry.usercenter.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henry.usercenter.common.BaseResponse;
 import com.henry.usercenter.common.ErrorCode;
 import com.henry.usercenter.common.ResultUtils;
 import com.henry.usercenter.exception.BusinessException;
 import com.henry.usercenter.model.domain.User;
-import com.henry.usercenter.model.domain.request.UserLoginRequest;
-import com.henry.usercenter.model.domain.request.UserRegisterRequest;
+import com.henry.usercenter.model.request.UserLoginRequest;
+import com.henry.usercenter.model.request.UserRegisterRequest;
+import com.henry.usercenter.model.vo.UserVO;
 import com.henry.usercenter.service.UserService;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.henry.usercenter.constant.userConstant.ADMIN_ROLE;
 import static com.henry.usercenter.constant.userConstant.USER_LOGIN_STATE;
 
 /**
@@ -36,10 +41,15 @@ import static com.henry.usercenter.constant.userConstant.USER_LOGIN_STATE;
 
 @RestController
 @RequestMapping("/user")
+//@CrossOrigin(origins = {"http://localhost:3000"})
+@Slf4j
 public class UserController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private RedisTemplate<String , Object> redisTemplate;
 
     @PostMapping("/register")
     public BaseResponse<Long> userRegister (@RequestBody UserRegisterRequest userRegisterRequest){
@@ -48,6 +58,7 @@ public class UserController {
       //      return ResultUtils.error(ErrorCode.PARAMS_ERROR);
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
+
 
         String userAccount = userRegisterRequest.getUserAccount();
         String userPassword = userRegisterRequest.getUserPassword();
@@ -84,8 +95,8 @@ public class UserController {
         return ResultUtils.success(user);
     }
 
-    @PostMapping("/loginout")
-    public BaseResponse<Integer> userLoginout( HttpServletRequest request){
+    @PostMapping("/logout")
+    public BaseResponse<Integer> userLogout( HttpServletRequest request){
 
         if(request == null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
@@ -98,15 +109,14 @@ public class UserController {
 
 
     @GetMapping("/current")
-    public BaseResponse<User> getCurrentUser(HttpServletRequest request){
+    public BaseResponse<User> getCurrentUser(HttpServletRequest request) {
         Object userObj = request.getSession().getAttribute(USER_LOGIN_STATE);
-
         User currentUser = (User) userObj;
-        if(currentUser == null){
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        if (currentUser == null) {
+            throw new BusinessException(ErrorCode.NOT_LOGIN);
         }
-        Long userId = currentUser.getId();
-        //todo 校验用户是否合法
+        long userId = currentUser.getId();
+        // TODO 校验用户是否合法
         User user = userService.getById(userId);
         User safetyUser = userService.getSafetyUser(user);
         return ResultUtils.success(safetyUser);
@@ -114,10 +124,11 @@ public class UserController {
 
 
 
+
     @GetMapping("/search")
     public BaseResponse<List<User>> searchUsers(String username , HttpServletRequest request){
         //鉴权
-        if(!isAdmin(request)){
+        if(!userService.isAdmin(request)){
           throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         QueryWrapper <User> queryWrapper = new QueryWrapper<>();
@@ -136,10 +147,58 @@ public class UserController {
 
     }
 
+    @GetMapping("/search/tags")
+    public BaseResponse<List<User>> searchUserByTags(@RequestParam(required = false) List<String> tagNameList){
+        if (CollectionUtils.isEmpty(tagNameList)){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        List<User> userList = userService.searchUsersByTags(tagNameList);
+        return ResultUtils.success(userList);
+    }
+
+
+    @PostMapping("/update")
+    public BaseResponse<Integer> updateUser(@RequestBody User user , HttpServletRequest request){
+        //1.校验参数是否为空
+        if(user == null){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+
+        //2.校验权限
+        //3.触发修改
+        int result= userService.updateUser(user,loginUser);
+        return ResultUtils.success(result);
+    }
+
+
+    @GetMapping("/recommend")
+    public BaseResponse<Page<User>> recommendUsers(long pageSize , long pageNum , HttpServletRequest request){
+        User loginUser = userService.getLoginUser(request);
+        String redisKey = String.format("yupao:user:recommend:%s", loginUser.getId());
+
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        //如果有缓存，直接读缓存
+        Page<User> userPage = (Page<User>) valueOperations.get(redisKey);
+        if (userPage != null){
+            return ResultUtils.success(userPage);
+        }
+        QueryWrapper <User> queryWrapper = new QueryWrapper<>();
+        userPage = userService.page(new Page<>(pageNum , pageSize)  , queryWrapper);
+        try {
+            valueOperations.set(redisKey, userPage,300000 , TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+          log.error("redis set key error" , e);
+        }
+
+        return  ResultUtils.success(userPage);
+    }
+
+
     @PostMapping("/delete")
     public BaseResponse<Boolean> deleteUser(@RequestBody long id,HttpServletRequest request){
 
-        if(!isAdmin(request)){
+        if(!userService.isAdmin(request)){
             throw new BusinessException(ErrorCode.NO_AUTO);
         }
         if(id <= 0){
@@ -152,19 +211,24 @@ public class UserController {
 
     }
 
-
-
-    private boolean isAdmin( HttpServletRequest request){
-
-
-        //管理员查询
-        Object userObj = request.getSession().getAttribute(USER_LOGIN_STATE);
-        User user = (User) userObj;
-        if(user == null || user.getUserRole()  != ADMIN_ROLE){
-            return false;
+    /**
+     * 获取最推荐用户
+     * @param num
+     * @param request
+     * @return
+     */
+    @GetMapping("/match")
+    public BaseResponse<List<User>> matchUsers(Long num , HttpServletRequest request){
+        if (num <= 0 || num > 20){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        return true;
+        User user = userService.getLoginUser(request);
+        return ResultUtils.success(userService.matchUsers(num , user));
+
     }
+
+
+
 
 
 
